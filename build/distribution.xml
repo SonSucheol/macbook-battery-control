@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>맥북 배터리 제어</title>
+    <welcome>맥북 배터리 제어를 응용 프로그램 폴더에 설치합니다.
+
+설치가 끝나면 Launchpad 또는 응용 프로그램 폴더에서 앱을 여세요. 메뉴 막대에 배터리 잔량이 표시됩니다.</welcome>
+    <conclusion>설치가 완료되었습니다.
+
+응용 프로그램 폴더의 맥북 배터리 제어를 열면 메뉴 막대에서 바로 사용할 수 있습니다.</conclusion>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <choices-outline>
+        <line choice="app"/>
+    </choices-outline>
+    <choice id="app" title="맥북 배터리 제어" description="메뉴 막대에서 배터리 상태와 충전 한도를 제어합니다.">
+        <pkg-ref id="local.ssc.macbook-battery"/>
+    </choice>
+    <pkg-ref id="local.ssc.macbook-battery" version="1.0" onConclusion="none">MacBookBattery-component.pkg</pkg-ref>
+</installer-gui-script>

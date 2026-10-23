@@ -1,0 +1,14 @@
+.DS_Store
+battery-helper
+__pycache__/
+*.pyc
+build/tmp/
+build/root/
+build/expanded/
+build/payload-check/
+build/desktop-check/
+build/desktop-payload/
+build/*.pkg
+build/charge-status
+build/hotkey-press
+build/hotkey-press.c
