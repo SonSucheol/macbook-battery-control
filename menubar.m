@@ -512,6 +512,26 @@ static NSString *rateText(double bytesPerSec) {
     return [byteText(bytesPerSec, NSByteCountFormatterCountStyleFile) stringByAppendingString:@"/s"];
 }
 
+static CGFloat metricsRateColumnWidth(NSDictionary *attrs) {
+    NSArray<NSString *> *samples = @[
+        [@"↓" stringByAppendingString:rateText(0)],
+        [@"↓" stringByAppendingString:rateText(999)],
+        [@"↓" stringByAppendingString:rateText(999.9 * 1024.0 * 1024.0)],
+        [@"↓" stringByAppendingString:rateText(999.0 * 1024.0 * 1024.0 * 1024.0)],
+        @"↓…"
+    ];
+    CGFloat width = 0;
+    for (NSString *sample in samples) width = MAX(width, ceil([sample sizeWithAttributes:attrs].width));
+    return width;
+}
+
+static NSDictionary *statusTitleAttributes(void) {
+    return @{
+        NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightMedium],
+        NSForegroundColorAttributeName: NSColor.labelColor
+    };
+}
+
 static NSImage *symbolImage(NSString *name, CGFloat pointSize) {
     NSImage *image = [NSImage imageWithSystemSymbolName:name accessibilityDescription:nil];
     if (!image) image = [NSImage imageWithSystemSymbolName:@"circle" accessibilityDescription:nil];
@@ -742,9 +762,55 @@ static void pushSample(NSMutableArray<NSNumber *> *values, double value) {
 }
 @end
 
+@interface BarGlyphView : NSView
+@property (nonatomic, strong) NSImage *image;
+@property (nonatomic, strong) NSImage *icon;
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, assign) CGFloat artWidth;
+@property (nonatomic, assign) NSSize layoutSize;
+@end
+
+@implementation BarGlyphView
+- (NSView *)hitTest:(NSPoint)point {
+    (void)point;
+    return nil;
+}
+- (NSSize)intrinsicContentSize {
+    return NSMakeSize(NSViewNoIntrinsicMetric, NSViewNoIntrinsicMetric);
+}
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    if (self.image) {
+        [self.image drawInRect:self.bounds fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
+        return;
+    }
+    CGFloat scaleX = self.layoutSize.width > 0 ? NSWidth(self.bounds) / self.layoutSize.width : 1;
+    CGFloat scaleY = self.layoutSize.height > 0 ? NSHeight(self.bounds) / self.layoutSize.height : 1;
+    NSImage *icon = self.icon;
+    if (icon && icon.size.width > 0 && icon.size.height > 0) {
+        NSSize draw = NSMakeSize(icon.size.width * scaleX, icon.size.height * scaleY);
+        NSRect iconRect = NSMakeRect((self.artWidth * scaleX - draw.width) / 2.0,
+                                      (NSHeight(self.bounds) - draw.height) / 2.0,
+                                      draw.width,
+                                      draw.height);
+        [icon drawInRect:iconRect fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
+    }
+    if (self.title.length == 0) return;
+    NSDictionary *attrs = statusTitleAttributes();
+    NSRect textBounds = [self.title boundingRectWithSize:NSMakeSize(CGFLOAT_MAX, CGFLOAT_MAX) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
+    CGFloat x = self.artWidth * scaleX + 4.0 * scaleX;
+    CGFloat y = floor((NSHeight(self.bounds) - NSHeight(textBounds)) / 2.0);
+    [self.title drawWithRect:NSMakeRect(x, y, ceil(NSWidth(textBounds)), ceil(NSHeight(textBounds))) options:NSStringDrawingUsesLineFragmentOrigin attributes:attrs];
+}
+@end
+
 @interface BatteryApp : NSObject <NSApplicationDelegate, NSWindowDelegate, NSPopoverDelegate, NSTableViewDataSource, NSTableViewDelegate>
 @property (nonatomic, strong) NSStatusItem *statusItem;
 @property (nonatomic, strong) NSStatusItem *metricsItem;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSImage *> *barSpacers;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSView *> *barOverlays;
+@property (nonatomic, copy) NSString *statusGlyphSignature;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSNumber *> *customSlotWidths;
 @property (nonatomic, strong) NSDictionary *status;
 @property (nonatomic, strong) NSTimer *cpuTimer;
 @property (nonatomic, strong) NSTimer *metricsTimer;
@@ -868,13 +934,18 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
     self.popoverBars = [NSMutableDictionary dictionary];
     self.noteFields = [NSMutableArray array];
     self.guardedControls = [NSMutableArray array];
+    self.barSpacers = [NSMutableDictionary dictionary];
+    self.barOverlays = [NSMutableDictionary dictionary];
+    self.customSlotWidths = [NSMutableDictionary dictionary];
     self.netName = @"네트워크";
     self.netSymbol = @"network";
     self.storageName = @"저장공간";
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
     self.statusItem.button.target = self;
     self.statusItem.button.action = @selector(toggleDashboard:);
-    self.statusItem.button.imagePosition = NSImageLeft;
+    self.statusItem.button.imagePosition = NSImageOnly;
+    self.statusItem.button.title = @"";
+    self.statusItem.button.toolTip = @"맥북 배터리 제어";
     self.statusItem.button.font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightMedium];
     gHotKeyOwner = self;
     [self installMainMenu];
@@ -1058,19 +1129,106 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
     self.popoverFields[@"cpu.summary"].stringValue = [NSString stringWithFormat:@"CPU  %.1f%%", self.cpuUsed];
     self.popoverFields[@"cpu.detail"].stringValue = detail;
     if (self.speedLabel) self.speedLabel.stringValue = [NSString stringWithFormat:@"지금 속도  %@", speed];
-    self.statusItem.button.toolTip = [NSString stringWithFormat:@"맥북 배터리 제어\nCPU %.0f%%", self.cpuUsed];
+    NSString *tip = [NSString stringWithFormat:@"맥북 배터리 제어\nCPU %.0f%%", self.cpuUsed];
+    if (![self.statusItem.button.toolTip isEqualToString:tip]) self.statusItem.button.toolTip = tip;
 }
 
-- (void)updateStatusItem {
+- (NSString *)statusButtonTitle {
     NSNumber *percent = self.status[@"percent"];
-    NSDictionary *charge = self.status[@"charge"];
     NSString *title = percent ? [NSString stringWithFormat:@"%@%%", percent] : @"배터리";
+    NSDictionary *charge = self.status[@"charge"];
     int limit = [charge[@"limit"] intValue];
     if ([charge[@"enabled"] boolValue] && limit > 0 && limit < 100) {
         title = [title stringByAppendingFormat:@" · %d", limit];
     }
-    self.statusItem.button.title = title;
-    [self applyStatusImage];
+    return title;
+}
+
+- (NSSize)statusArtSize {
+    CGFloat width = 18;
+    CGFloat height = 18;
+    for (NSImage *frame in self.runnerFrames) {
+        width = MAX(width, ceil(frame.size.width));
+        height = MAX(height, ceil(frame.size.height));
+    }
+    return NSMakeSize(width, height);
+}
+
+- (CGFloat)statusTitleSlotWidth {
+    NSDictionary *attrs = statusTitleAttributes();
+    CGFloat width = ceil([@"100%" sizeWithAttributes:attrs].width);
+    width = MAX(width, ceil([[self statusButtonTitle] sizeWithAttributes:attrs].width));
+    NSDictionary *charge = self.status[@"charge"];
+    int limit = [charge[@"limit"] intValue];
+    if ([charge[@"enabled"] boolValue] && limit > 0 && limit < 100) {
+        width = MAX(width, ceil([@"100% · 80" sizeWithAttributes:attrs].width));
+    }
+    return width;
+}
+
+- (NSImage *)currentStatusIcon {
+    if (self.runnerFrames.count > 0) return self.runnerFrames[self.runnerFrame % self.runnerFrames.count];
+    NSImage *icon = symbolImage(symbolName(self.status ?: @{}), 15);
+    icon.size = NSMakeSize(16, 16);
+    return icon;
+}
+
+// 버튼의 image 와 title 을 매 프레임 바꾸면 메뉴 막대 칸이 다시 잡히며 한글 조합이 끊긴다.
+// 칸 크기가 바뀔 때만 투명 이미지를 두고, 그림과 글자는 그 위 뷰에 그린다.
+- (BarGlyphView *)glyphViewOnButton:(NSStatusBarButton *)button key:(NSString *)key size:(NSSize)size {
+    if (!button || size.width < 1 || size.height < 1) return nil;
+    NSImage *spacer = self.barSpacers[key];
+    BOOL sizeChanged = !spacer || fabs(spacer.size.width - size.width) > 0.5 || fabs(spacer.size.height - size.height) > 0.5;
+    if (sizeChanged) {
+        spacer = [[NSImage alloc] initWithSize:size];
+        self.barSpacers[key] = spacer;
+        button.image = spacer;
+    } else if (button.image != spacer) {
+        button.image = spacer;
+    }
+    BarGlyphView *view = (BarGlyphView *)self.barOverlays[key];
+    if (![view isKindOfClass:BarGlyphView.class] || view.superview != button) {
+        view = [[BarGlyphView alloc] initWithFrame:NSMakeRect(0, 0, size.width, size.height)];
+        [view setAccessibilityElement:NO];
+        [button addSubview:view];
+        self.barOverlays[key] = view;
+    }
+    NSRect imageRect = NSZeroRect;
+    if (button.bounds.size.width > 1 && [button.cell respondsToSelector:@selector(imageRectForBounds:)]) {
+        imageRect = [(id)button.cell imageRectForBounds:button.bounds];
+    }
+    if (imageRect.size.width < 1 || imageRect.size.height < 1) imageRect = NSMakeRect(0, 0, size.width, size.height);
+    if (!NSEqualRects(view.frame, imageRect)) view.frame = imageRect;
+    view.layoutSize = size;
+    return view;
+}
+
+- (void)refreshStatusButton {
+    NSStatusBarButton *button = self.statusItem.button;
+    if (!button) return;
+    NSSize art = [self statusArtSize];
+    NSString *title = [self statusButtonTitle];
+    NSSize size = NSMakeSize(art.width + 4.0 + [self statusTitleSlotWidth], MAX(art.height, 18));
+    NSString *iconKey = self.runnerFrames.count
+        ? [NSString stringWithFormat:@"runner:%lu", (unsigned long)(self.runnerFrame % self.runnerFrames.count)]
+        : [NSString stringWithFormat:@"symbol:%@", symbolName(self.status ?: @{})];
+    NSString *signature = [NSString stringWithFormat:@"%@|%@|%@|%.2f|%.2f|%.2f", selectedRunnerID(), iconKey, title, art.width, size.width, size.height];
+    BarGlyphView *glyph = [self glyphViewOnButton:button key:@"status" size:size];
+    if ([signature isEqualToString:self.statusGlyphSignature]) return;
+    self.statusGlyphSignature = signature;
+    glyph.image = nil;
+    glyph.icon = [self currentStatusIcon];
+    glyph.title = title;
+    glyph.artWidth = art.width;
+    [glyph setNeedsDisplay:YES];
+    // setImage: 는 메뉴 막대를 다시 배치한다. 그림이 바뀐 프레임만 display 로 그린다.
+    [button display];
+    NSString *label = [NSString stringWithFormat:@"맥북 배터리 제어, %@", title ?: @""];
+    if (![button.accessibilityLabel isEqualToString:label]) button.accessibilityLabel = label;
+}
+
+- (void)updateStatusItem {
+    [self refreshStatusButton];
 }
 
 - (NSImage *)metricsBarImage {
@@ -1102,7 +1260,7 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
         NSString *text = (!failed && [snap[@"metricsBarValue"] isKindOfClass:[NSString class]] && [snap[@"metricsBarValue"] length]) ? snap[@"metricsBarValue"] : @"---";
         if (text.length > 12) text = [[text substringToIndex:12] stringByAppendingString:@"…"];
         NSString *symbol = snap[@"symbol"] ?: @"chart.bar.horizontal.page";
-        [items addObject:@{@"symbol": symbol, @"text": text}];
+        [items addObject:@{@"symbol": symbol, @"text": text, @"slot": @"custom", @"id": ident ?: @""}];
     }
     if (items.count == 0) {
         NSImage *idle = symbolImage(@"moon.zzz", 13);
@@ -1115,10 +1273,21 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
     NSMutableArray *layout = [NSMutableArray array];
     for (NSDictionary *item in items) {
         CGFloat textWidth = 0;
-        if (item[@"text"]) textWidth = ceil([item[@"text"] sizeWithAttributes:attrs].width);
-        else textWidth = MAX(ceil([item[@"up"] sizeWithAttributes:smallAttrs].width), ceil([item[@"down"] sizeWithAttributes:smallAttrs].width));
+        if (item[@"text"]) {
+            if ([item[@"slot"] isEqualToString:@"custom"]) {
+                CGFloat measured = ceil([item[@"text"] sizeWithAttributes:attrs].width);
+                NSString *ident = item[@"id"] ?: @"";
+                CGFloat kept = MAX(measured, [self.customSlotWidths[ident] doubleValue]);
+                if (kept > [self.customSlotWidths[ident] doubleValue] + 0.5) self.customSlotWidths[ident] = @(kept);
+                textWidth = kept;
+            } else {
+                textWidth = ceil([@"100%" sizeWithAttributes:attrs].width);
+            }
+        } else {
+            textWidth = metricsRateColumnWidth(smallAttrs);
+        }
         CGFloat width = 15 + textWidth;
-        [layout addObject:@{@"item": item, @"x": @(cursor), @"textX": @(cursor + 15), @"w": @(width)}];
+        [layout addObject:@{@"item": item, @"x": @(cursor), @"textX": @(cursor + 15), @"textW": @(textWidth), @"w": @(width)}];
         cursor += width + 7;
     }
     CGFloat totalWidth = MAX(1, cursor - 7);
@@ -1130,12 +1299,16 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
             CGFloat textX = [entry[@"textX"] doubleValue];
             NSImage *icon = symbolImage(item[@"symbol"], 11);
             [icon drawInRect:NSMakeRect(x, 2, 13, 13) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1];
+            CGFloat textW = [entry[@"textW"] doubleValue];
+            [NSGraphicsContext.currentContext saveGraphicsState];
+            NSRectClip(NSMakeRect(textX, -2, textW, 22));
             if (item[@"text"]) {
                 [item[@"text"] drawAtPoint:NSMakePoint(textX, 2) withAttributes:attrs];
             } else {
                 [item[@"up"] drawAtPoint:NSMakePoint(textX, 8) withAttributes:smallAttrs];
                 [item[@"down"] drawAtPoint:NSMakePoint(textX, -1) withAttributes:smallAttrs];
             }
+            [NSGraphicsContext.currentContext restoreGraphicsState];
         }
         return YES;
     }];
@@ -1149,6 +1322,8 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
             [[NSStatusBar systemStatusBar] removeStatusItem:self.metricsItem];
             self.metricsItem = nil;
         }
+        [self.barOverlays removeObjectForKey:@"metrics"];
+        [self.barSpacers removeObjectForKey:@"metrics"];
         return;
     }
     NSImage *image = [self metricsBarImage];
@@ -1157,6 +1332,8 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
             [[NSStatusBar systemStatusBar] removeStatusItem:self.metricsItem];
             self.metricsItem = nil;
         }
+        [self.barOverlays removeObjectForKey:@"metrics"];
+        [self.barSpacers removeObjectForKey:@"metrics"];
         return;
     }
     if (!self.metricsItem) {
@@ -1164,9 +1341,15 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
         self.metricsItem.button.target = self;
         self.metricsItem.button.action = @selector(toggleMetricsSettings:);
         self.metricsItem.button.imagePosition = NSImageOnly;
+        self.metricsItem.button.title = @"";
+        self.metricsItem.button.toolTip = @"지표 막대 설정";
     }
-    self.metricsItem.button.image = image;
-    self.metricsItem.button.toolTip = @"지표 막대 설정";
+    BarGlyphView *glyph = [self glyphViewOnButton:self.metricsItem.button key:@"metrics" size:image.size];
+    glyph.icon = nil;
+    glyph.title = nil;
+    glyph.image = image;
+    [glyph setNeedsDisplay:YES];
+    [self.metricsItem.button display];
 }
 
 - (void)toggleDashboard:(id)sender {
@@ -2451,6 +2634,7 @@ static NSDictionary *convertRunnerURLs(NSArray<NSURL *> *urls) {
     }
     self.runnerFrames = frames ?: @[];
     if (self.runnerFrames.count > 0 && self.runnerFrame >= self.runnerFrames.count) self.runnerFrame = 0;
+    self.statusGlyphSignature = nil;
 }
 
 - (void)loadRunner {
@@ -2595,19 +2779,12 @@ static NSDictionary *convertRunnerURLs(NSArray<NSURL *> *urls) {
     (void)timer;
     if (self.runnerFrames.count == 0) return;
     self.runnerFrame = (self.runnerFrame + 1) % self.runnerFrames.count;
-    NSImage *frame = self.runnerFrames[self.runnerFrame];
-    self.statusItem.button.image = frame;
-    self.previewView.image = frame;
+    self.previewView.image = self.runnerFrames[self.runnerFrame];
+    [self applyStatusImage];
 }
 
 - (void)applyStatusImage {
-    if (self.runnerFrames.count > 0) {
-        self.statusItem.button.image = self.runnerFrames[self.runnerFrame % self.runnerFrames.count];
-        return;
-    }
-    NSImage *image = [NSImage imageWithSystemSymbolName:symbolName(self.status) accessibilityDescription:@"배터리"];
-    image.template = YES;
-    self.statusItem.button.image = image;
+    [self refreshStatusButton];
 }
 
 - (NSTextField *)label:(NSString *)text size:(CGFloat)size weight:(NSFontWeight)weight color:(NSColor *)color {

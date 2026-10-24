@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>맥북 배터리 제어 1.0.0</title>
+    <title>맥북 배터리 제어 1.0.1</title>
     <welcome file="welcome.html" mime-type="text/html"/>
     <conclusion file="conclusion.html" mime-type="text/html"/>
     <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
@@ -8,8 +8,8 @@
     <choices-outline>
         <line choice="app"/>
     </choices-outline>
-    <choice id="app" title="맥북 배터리 제어 1.0.0" description="메뉴 막대에서 배터리 상태, 충전 한도, 시스템 상태를 제어합니다.">
+    <choice id="app" title="맥북 배터리 제어 1.0.1" description="메뉴 막대에서 배터리 상태, 충전 한도, 시스템 상태를 제어합니다.">
         <pkg-ref id="local.ssc.macbook-battery"/>
     </choice>
-    <pkg-ref id="local.ssc.macbook-battery" version="1.0.0" onConclusion="none">MacBookBattery-component.pkg</pkg-ref>
+    <pkg-ref id="local.ssc.macbook-battery" version="1.0.1" onConclusion="none">MacBookBattery-component.pkg</pkg-ref>
 </installer-gui-script>
