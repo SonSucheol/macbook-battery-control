@@ -9,6 +9,7 @@ build/payload-check/
 build/desktop-check/
 build/desktop-payload/
 build/*.pkg
+*.pkg
 build/charge-status
 build/hotkey-press
 build/hotkey-press.c

@@ -1365,6 +1365,7 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
         self.popover.animates = YES;
         self.popover.delegate = self;
         self.popoverRoot = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, 360, 240)];
+        self.popoverRoot.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         NSViewController *controller = [[NSViewController alloc] initWithNibName:nil bundle:nil];
         controller.view = self.popoverRoot;
         self.popover.contentViewController = controller;
@@ -1522,29 +1523,30 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
     if (row[@"icon"]) self.popoverIcons[row[@"icon"]] = icon;
     NSTextField *summary = [self label:@"–" size:13 weight:NSFontWeightSemibold color:NSColor.labelColor];
     summary.lineBreakMode = NSLineBreakByTruncatingTail;
-    summary.frame = NSMakeRect(48, y, width - 60, 18);
+    summary.frame = NSMakeRect(48, y + 2, width - 64, 18);
     [inner addSubview:summary];
     self.popoverFields[row[@"summary"]] = summary;
-    CGFloat textY = y + 20;
+    CGFloat textY = y + 26;
     for (NSString *key in row[@"lines"]) {
         NSTextField *line = [self label:@"" size:11 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
         line.lineBreakMode = NSLineBreakByTruncatingTail;
-        line.frame = NSMakeRect(60, textY, width - 72, 15);
+        line.frame = NSMakeRect(48, textY, width - 64, 15);
         [inner addSubview:line];
         self.popoverFields[key] = line;
         textY += 16;
     }
     NSString *graph = row[@"graph"];
     if (graph) {
+        NSRect graphFrame = NSMakeRect(48, textY + 2, width - 64, 16);
         NSView *accessory = nil;
         if ([graph isEqualToString:@"cpu"]) {
-            self.popoverCPUGraph = [[LineGraphView alloc] initWithFrame:NSMakeRect(60, textY + 2, 120, 16)];
+            self.popoverCPUGraph = [[LineGraphView alloc] initWithFrame:graphFrame];
             accessory = self.popoverCPUGraph;
         } else if ([graph isEqualToString:@"memory"]) {
-            self.popoverMemoryGraph = [[LineGraphView alloc] initWithFrame:NSMakeRect(60, textY + 2, 120, 16)];
+            self.popoverMemoryGraph = [[LineGraphView alloc] initWithFrame:graphFrame];
             accessory = self.popoverMemoryGraph;
         } else if ([graph isEqualToString:@"storage"]) {
-            self.popoverStorageGraph = [[BarGraphView alloc] initWithFrame:NSMakeRect(60, textY + 2, 120, 16)];
+            self.popoverStorageGraph = [[BarGraphView alloc] initWithFrame:graphFrame];
             accessory = self.popoverStorageGraph;
         }
         if (accessory) {
@@ -1612,6 +1614,7 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
     [self.popoverRoot addSubview:card];
     y += visible + 10;
     self.popoverRoot.frame = NSMakeRect(0, 0, width, y);
+    self.popoverRoot.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.popover.contentSize = self.popoverRoot.frame.size;
 }
 
@@ -1641,7 +1644,7 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
         BOOL updated = [key hasSuffix:@"|updated"];
         NSTextField *line = [self label:@"" size:11 weight:NSFontWeightRegular color:updated ? NSColor.secondaryLabelColor : NSColor.labelColor];
         line.lineBreakMode = NSLineBreakByTruncatingTail;
-        line.frame = NSMakeRect(60, textY, width - 72, 15);
+        line.frame = NSMakeRect(48, textY, width - 64, 15);
         [inner addSubview:line];
         self.popoverFields[key] = line;
         textY += 16;
@@ -1650,7 +1653,7 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
         if (bits.count < 4 || ![bits[3] isEqualToString:@"bar"]) continue;
         NSInteger index = bits[2].integerValue;
         if (index < 0 || index >= (NSInteger)metrics.count || !metrics[index][@"normalizedValue"]) continue;
-        BarGraphView *bar = [[BarGraphView alloc] initWithFrame:NSMakeRect(60, textY, 140, 14)];
+        BarGraphView *bar = [[BarGraphView alloc] initWithFrame:NSMakeRect(48, textY, width - 64, 14)];
         [inner addSubview:bar];
         self.popoverBars[key] = bar;
         textY += 16;
@@ -2789,6 +2792,8 @@ static NSDictionary *convertRunnerURLs(NSArray<NSURL *> *urls) {
 
 - (NSTextField *)label:(NSString *)text size:(CGFloat)size weight:(NSFontWeight)weight color:(NSColor *)color {
     NSTextField *field = [NSTextField labelWithString:text];
+    // labelWithString 은 제약 기반이라, 프레임으로 놓는 상태창에서 왼쪽 아래로 붙는다.
+    field.translatesAutoresizingMaskIntoConstraints = YES;
     field.font = [NSFont systemFontOfSize:size weight:weight];
     field.textColor = color;
     field.lineBreakMode = NSLineBreakByTruncatingTail;
