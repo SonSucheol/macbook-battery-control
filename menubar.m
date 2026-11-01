@@ -1365,7 +1365,6 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
         self.popover.animates = YES;
         self.popover.delegate = self;
         self.popoverRoot = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, 360, 240)];
-        self.popoverRoot.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         NSViewController *controller = [[NSViewController alloc] initWithNibName:nil bundle:nil];
         controller.view = self.popoverRoot;
         self.popover.contentViewController = controller;
@@ -1568,13 +1567,23 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
     CGFloat width = 360;
     CGFloat y = 10;
     NSTextField *title = [self label:@"맥북 배터리 제어" size:13 weight:NSFontWeightRegular color:NSColor.secondaryLabelColor];
-    title.frame = NSMakeRect(16, y, 250, 18);
+    title.translatesAutoresizingMaskIntoConstraints = NO;
     [self.popoverRoot addSubview:title];
     NSButton *menuButton = [NSButton buttonWithImage:symbolImage(@"list.bullet", 13) target:self action:@selector(showPopoverMenu:)];
     menuButton.bordered = NO;
-    menuButton.frame = NSMakeRect(width - 40, y - 5, 28, 26);
+    menuButton.translatesAutoresizingMaskIntoConstraints = NO;
     menuButton.contentTintColor = NSColor.secondaryLabelColor;
     [self.popoverRoot addSubview:menuButton];
+    [NSLayoutConstraint activateConstraints:@[
+        [title.leadingAnchor constraintEqualToAnchor:self.popoverRoot.leadingAnchor constant:16],
+        [title.topAnchor constraintEqualToAnchor:self.popoverRoot.topAnchor constant:10],
+        [title.trailingAnchor constraintEqualToAnchor:menuButton.leadingAnchor constant:-8],
+        [title.heightAnchor constraintEqualToConstant:18],
+        [menuButton.trailingAnchor constraintEqualToAnchor:self.popoverRoot.trailingAnchor constant:-12],
+        [menuButton.topAnchor constraintEqualToAnchor:self.popoverRoot.topAnchor constant:5],
+        [menuButton.widthAnchor constraintEqualToConstant:28],
+        [menuButton.heightAnchor constraintEqualToConstant:26]
+    ]];
     y += 32;
 
     FlippedView *inner = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width - 16, 10)];
@@ -1608,13 +1617,22 @@ static OSStatus HotKeyPressed(EventHandlerCallRef nextHandler, EventRef event, v
     card.wantsLayer = YES;
     card.layer.cornerRadius = 12;
     card.layer.masksToBounds = YES;
-    scroll.frame = card.bounds;
-    scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    card.translatesAutoresizingMaskIntoConstraints = NO;
+    scroll.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:scroll];
     [self.popoverRoot addSubview:card];
+    [NSLayoutConstraint activateConstraints:@[
+        [card.leadingAnchor constraintEqualToAnchor:self.popoverRoot.leadingAnchor constant:8],
+        [card.trailingAnchor constraintEqualToAnchor:self.popoverRoot.trailingAnchor constant:-8],
+        [card.topAnchor constraintEqualToAnchor:self.popoverRoot.topAnchor constant:y],
+        [card.bottomAnchor constraintEqualToAnchor:self.popoverRoot.bottomAnchor constant:-10],
+        [scroll.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+        [scroll.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
+        [scroll.topAnchor constraintEqualToAnchor:card.topAnchor],
+        [scroll.bottomAnchor constraintEqualToAnchor:card.bottomAnchor]
+    ]];
     y += visible + 10;
     self.popoverRoot.frame = NSMakeRect(0, 0, width, y);
-    self.popoverRoot.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.popover.contentSize = self.popoverRoot.frame.size;
 }
 
